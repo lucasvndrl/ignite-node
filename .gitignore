@@ -1,3 +1,6 @@
 node_modules/
-package.json
 yarn.lock
+.prettierrc.json
+eslintrc.json
+yarn-error.log
+package-lock.json

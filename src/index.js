@@ -1,33 +1,147 @@
-const express = require("express");
+const { response } = require("express")
+const express = require("express")
 
-const app = express();
+const { v4: uuidv4 } = require("uuid")
 
-app.use(express.json());
+const app = express()
 
-app.get("/courses", (req, res) => {
-  const query = req.query;
-  console.log(query);
-  return res.json(["Curso 1", "Curso 2", "Curso 3"]);
-});
+const customers = []
+ 
+const verifyIfExistsAccountCPF = (req, res, next) => {
+  const { cpf } = req.headers
 
-app.post("/courses", (req, res) => {
-  const body = req.body;
-  console.log(body);
-  return res.json(["Curso 1", "Curso 2", "Curso 3", "Curso 4"]);
-});
+  const customer = customers.find(customer => customer.cpf === cpf)
 
-app.put("/courses/:id", (req, res) => {
-  const { id } = req.params;
-  console.log(id);
-  return res.json(["Curso 6", "Curso 2", "Curso 3", "Curso 4"]);
-});
+  if(!customer) {
+    return res.status(400).json({ error: "Customer not found" })
+  } 
 
-app.patch("/courses/:id", (req, res) => {
-  return res.json(["Curso 6", "Curso 7", "Curso 3", "Curso 4"]);
-});
+  req.customer = customer
 
-app.delete("/courses/:id", (req, res) => {
-  return res.json(["Curso 6", "Curso 7", "Curso 4"]);
-});
+  return next()
+}
 
-app.listen(2666);
+const getBalance = (statement) => {
+  const balance = statement.reduce((acc, operation) => {
+    if(operation.type === 'credit') {
+      return acc + operation.amount
+    } else {
+      return acc - operation.amount
+    }
+  }, 0)
+
+  return balance
+}
+
+app.use(express.json())
+
+app.post("/account", (req, res) => {
+  const { cpf, name } = req.body
+
+  const customerAlreadyExists = customers.some((customer) => customer.cpf === cpf)
+
+  if(customerAlreadyExists) {
+    return res.status(400).json({ error: "Customer already exists" })
+  }
+
+  customers.push({
+    cpf,
+    name,
+    id:  uuidv4(),
+    statement: []
+  })
+
+  return res.status(201).send()
+})
+
+app.use(verifyIfExistsAccountCPF)
+
+app.get("/statement", (req,res) => {
+  const { customer } = req
+
+  return res.json(customer.statement)
+})
+
+app.post("/deposit", (req, res) => {
+  const { description, amount } = req.body
+  const { customer } = req
+
+  const statementOperation = {
+    description,
+    amount,
+    created_at: new Date(),
+    type: "credit"
+  }
+
+  customer.statement.push(statementOperation)
+
+  return res.status(201).send()
+})
+
+app.post("/withdraw", (req, res) => {
+  const { amount } = req.body
+  const { customer } = req
+
+  const balance = getBalance(customer.statement)
+
+  if(balance < amount) {
+    return res.status(400).json({ error: "Insufficiente funds!" })
+  } 
+
+  const statementOperation = {
+    amount,
+    created_at: new Date(),
+    type: "debit"
+  }
+
+  customer.statement.push(statementOperation)
+
+  return res.status(201).send()
+})
+
+app.get("/statement/date", (req,res) => {
+  const { customer } = req
+  const { date } = req.query
+
+  const dateFormat = new Date(date + " 00:00")
+
+  const statement = customer.statement.filter((statement) => 
+    statement.created_at.toDateString() === new Date(dateFormat).toDateString())
+
+  return res.json(statement)
+})
+
+app.put("/account", (req, res) => {
+  const { name } = req.body
+  const { customer } = req
+
+  customer.name = name
+
+  return res.status(201).send()
+})
+
+app.get("/account", (req, res) => {
+  const { customer } = req
+
+  return res.json(customer)
+})
+
+app.delete("/account", (req, res) => {
+  const { customer } = req
+
+  customers.splice(customer, 1)
+
+  return res.status(200).json(customers)
+})
+
+app.get("/balance", (req, res ) => {
+  const { customer } = req
+
+  const balance = getBalance(customer.statement)
+
+  return res.json(balance)
+})
+
+app.listen(2666, () => {
+  console.log('server up!')
+})
